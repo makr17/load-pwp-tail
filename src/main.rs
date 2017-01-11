@@ -2,10 +2,10 @@ use std::env;
 use std::io;
 use std::io::prelude::*;
 
-extern crate postgres;
-use postgres::{Connection, TlsMode};
 extern crate chrono;
 use chrono::{DateTime, FixedOffset};
+extern crate postgres;
+use postgres::{Connection, TlsMode};
 
 #[derive(Debug)]
 struct Sample {
@@ -14,19 +14,34 @@ struct Sample {
     value:    i32
 }
 
+const WATER: &'static str = "water";
+const POWER: &'static str = "power";
+
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    // default to power, but allow override to water
+    let mut table = POWER;
+    let mut meter_idx: usize = 3;
+    let mut value_idx: usize = 7;
+    if args.len() > 1 {
+        if args[1] == WATER {
+            table = WATER;
+            meter_idx = 6;
+            value_idx = 7;
+        }
+    }
+
     // connect to the db
     let user  = env::var("USER").unwrap();
     let db    = "pwp";
-    let table = "power";
     let dburi = ["postgres://", &user, "@%2Frun%2Fpostgresql", "/", &db].concat();
     let conn = Connection::connect(dburi, TlsMode::None).unwrap();
 
     let last = last_sample(table, &conn);
-
+    println!("{:?}", last);
     let insert = [
         "insert into ",
-        &table,
+        table,
         " (sampled, meter_id, value)",
         " values ($1, $2, $3)"
     ].concat();
@@ -38,8 +53,8 @@ fn main() {
         let tokens: Vec<&str> = input.split(separators).collect();
         let sample = Sample {
             sampled:  DateTime::parse_from_rfc3339(tokens[0]).unwrap(),
-            meter_id: tokens[3].parse::<i32>().unwrap(),
-            value:    tokens[7].parse::<i32>().unwrap()
+            meter_id: tokens[meter_idx].parse::<i32>().unwrap(),
+            value:    tokens[value_idx].parse::<i32>().unwrap()
         };
         // skip anything before the most recent sample
         // TODO: sample might have more precision, yielding one error at start
