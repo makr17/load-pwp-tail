@@ -32,10 +32,7 @@ fn main() {
     }
 
     // connect to the db
-    let user  = env::var("USER").unwrap();
-    let db    = "pwp";
-    let dburi = ["postgres://", &user, "@%2Frun%2Fpostgresql", "/", &db].concat();
-    let conn = Connection::connect(dburi, TlsMode::None).unwrap();
+    let mut conn = db_connect( "pwp" );
 
     let last = last_sample(table, &conn);
     println!("{:?}", last);
@@ -45,7 +42,6 @@ fn main() {
         " (sampled, meter_id, value)",
         " values ($1, $2, $3)"
     ].concat();
-    let stmt = conn.prepare(&insert).unwrap();
     let separators : &[char] = &[','];
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
@@ -60,9 +56,26 @@ fn main() {
         // TODO: sample might have more precision, yielding one error at start
         if sample.sampled >= last.sampled {
             println!("{:?}", sample);
-            let _res = stmt.execute(&[&sample.sampled, &sample.meter_id, &sample.value]);
+            let _res = match conn.execute(&insert, &[&sample.sampled, &sample.meter_id, &sample.value]) {
+                Ok(res)  => res,
+                Err(why) => {
+                    println!("{}", why);
+                    conn = db_connect( "pwp" );
+                    let _foo = conn.execute(&insert, &[&sample.sampled, &sample.meter_id, &sample.value]);
+                    continue;
+                },
+            };
         }
     }
+}
+
+fn db_connect ( db: &str ) -> postgres::Connection {
+    println!("connecting to {}", db);
+    let user  = env::var("USER").unwrap();
+    let db    = "pwp";
+    let dburi = ["postgres://", &user, "@%2Frun%2Fpostgresql", "/", &db].concat();
+    let conn = Connection::connect(dburi, TlsMode::None).unwrap();
+    return conn;
 }
 
 fn last_sample (table: &str, conn: &postgres::Connection) -> Sample {
