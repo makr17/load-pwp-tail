@@ -1,11 +1,29 @@
 use std::env;
 use std::io;
 use std::io::prelude::*;
+use std::fs::File;
 
 extern crate chrono;
 use chrono::{DateTime, FixedOffset};
 extern crate postgres;
 use postgres::{Connection, TlsMode};
+extern crate toml;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+
+#[derive(Deserialize, Debug)]
+struct Config {
+    database: Db,
+}
+
+#[derive(Deserialize, Debug)]
+struct Db {
+    hostname: String,
+    database: String,
+    username: String,
+    password: String,
+}
 
 #[derive(Debug)]
 struct Sample {
@@ -30,9 +48,10 @@ fn main() {
             value_idx = 7;
         }
     }
+    let dbconf = db_config();
 
     // connect to the db
-    let mut conn = db_connect( "pwp" );
+    let mut conn = db_connect( &dbconf );
 
     let last = last_sample(table, &conn);
     println!("{:?}", last);
@@ -60,7 +79,7 @@ fn main() {
                 Ok(res)  => res,
                 Err(why) => {
                     println!("{}", why);
-                    conn = db_connect( "pwp" );
+                    conn = db_connect( &dbconf );
                     let _foo = conn.execute(&insert, &[&sample.sampled, &sample.meter_id, &sample.value]);
                     continue;
                 },
@@ -69,11 +88,32 @@ fn main() {
     }
 }
 
-fn db_connect ( db: &str ) -> postgres::Connection {
-    println!("connecting to {}", db);
-    let user  = env::var("USER").unwrap();
-    let db    = "pwp";
-    let dburi = ["postgres://", &user, "@%2Frun%2Fpostgresql", "/", &db].concat();
+fn db_config () -> Db {
+    let path = format!("{}/conf/db.config.toml", env::var("HOME").unwrap());
+    println!("{}", path);
+    let mut config_toml = String::new();
+    let mut file = match File::open(&path) {
+        Ok(file) => file,
+        Err(_)  => {
+            panic!("Could not find config file, using default!");
+        }
+    };
+    file.read_to_string(&mut config_toml)
+            .unwrap_or_else(|err| panic!("Error while reading config: [{}]", err));
+    let config: Config = toml::from_str(&config_toml).unwrap();
+
+    return config.database;
+}
+
+fn db_connect ( db: &Db ) -> postgres::Connection {
+    println!("connecting to {}", db.database);
+    let dburi = format!(
+        "postgres://{}:{}@{}/{}",
+        db.username,
+        db.password,
+        db.hostname,
+        db.database
+    );
     let conn = Connection::connect(dburi, TlsMode::None).unwrap();
     return conn;
 }
