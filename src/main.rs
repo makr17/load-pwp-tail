@@ -59,7 +59,8 @@ fn main() {
         "insert into ",
         table,
         " (sampled, meter_id, value)",
-        " values ($1, $2, $3)"
+        " values ($1, $2, $3)",
+        " on conflict do nothing"
     ].concat();
     let separators : &[char] = &[','];
     let stdin = io::stdin();
