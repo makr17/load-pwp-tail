@@ -6,7 +6,7 @@ use std::fs::File;
 extern crate chrono;
 use chrono::{DateTime, FixedOffset};
 extern crate postgres;
-use postgres::{Connection, TlsMode};
+use postgres::{Client, NoTls};
 extern crate toml;
 extern crate serde;
 #[macro_use]
@@ -53,15 +53,12 @@ fn main() {
     // connect to the db
     let mut conn = db_connect( &dbconf );
 
-    let last = last_sample(table, &conn);
+    let last = last_sample(table, &mut conn);
     println!("{:?}", last);
-    let insert = [
-        "insert into ",
-        table,
-        " (sampled, meter_id, value)",
-        " values ($1, $2, $3)",
-        " on conflict do nothing"
-    ].concat();
+    let insert = format!(
+        "insert into {} (sampled, meter_id, value) values ($1, $2, $3) on conflict do nothing",
+        table
+    );
     let separators : &[char] = &[','];
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
@@ -76,12 +73,12 @@ fn main() {
         // TODO: sample might have more precision, yielding one error at start
         if sample.sampled >= last.sampled {
             println!("{:?}", sample);
-            let _res = match conn.execute(&insert, &[&sample.sampled, &sample.meter_id, &sample.value]) {
+            let _res = match conn.execute(&*insert, &[&sample.sampled, &sample.meter_id, &sample.value]) {
                 Ok(res)  => res,
                 Err(why) => {
                     println!("{}", why);
                     conn = db_connect( &dbconf );
-                    let _foo = conn.execute(&insert, &[&sample.sampled, &sample.meter_id, &sample.value]);
+                    let _foo = conn.execute(&*insert, &[&sample.sampled, &sample.meter_id, &sample.value]);
                     continue;
                 },
             };
@@ -106,7 +103,7 @@ fn db_config () -> Db {
     return config.database;
 }
 
-fn db_connect ( db: &Db ) -> postgres::Connection {
+fn db_connect ( db: &Db ) -> Client {
     println!("connecting to {}", db.database);
     let dburi = format!(
         "postgres://{}:{}@{}/{}",
@@ -115,18 +112,17 @@ fn db_connect ( db: &Db ) -> postgres::Connection {
         db.hostname,
         db.database
     );
-    let conn = Connection::connect(dburi, TlsMode::None).unwrap();
+    let conn = Client::connect(&dburi, NoTls).unwrap();
     return conn;
 }
 
-fn last_sample (table: &str, conn: &postgres::Connection) -> Sample {
+fn last_sample (table: &str, conn: &mut Client) -> Sample {
     // find the most recent sample
-    let query = [
-        "select sampled, meter_id, value from ",
-        table,
-        " order by sampled desc limit 1"
-    ].concat();
-    let rs = conn.query(&query, &[]).unwrap();
+    let query = format!(
+        "select sampled, meter_id, value from {} order by sampled desc limit 1",
+        table
+    );
+    let rs = conn.query(&*query, &[]).unwrap();
     let row =  rs.iter().next().unwrap();
     let sample = Sample {
         sampled: row.get(0),

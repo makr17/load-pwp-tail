@@ -4,8 +4,8 @@ version = "0.1.0"
 authors = ["makr17 <bracher@gmail.com>"]
 
 [dependencies]
-chrono = "0.3"
-postgres = { version = "0.14", features = ["with-chrono"] }
-serde = "*"
-serde_derive = "*"
-toml = "*"
+chrono = "0.4"
+postgres = { version = "0.19", features = ["with-chrono-0_4"] }
+serde = "1.0"
+serde_derive = "1.0"
+toml = "0.5"
